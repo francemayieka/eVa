@@ -4,3 +4,8 @@
 /storage/framework/*
 /bootstrap/cache/*
 /public/storage
+.env
+.env.example
+.DS_Store
+.idea
+.vscode
