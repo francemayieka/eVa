@@ -19,6 +19,7 @@ class CandidateController extends Controller
             $validated = $request->validate([
                 'candidates' => 'required|array|min:1',
                 'candidates.*.name' => 'required|string|max:255',
+                'candidates.*.reg_no' => 'nullable|string|unique:candidates,reg_no|max:50', // Unique reg_no (nullable)
                 'candidates.*.position' => 'required|string|max:255',
                 'candidates.*.image' => 'nullable|string', // Expect image URL or stored path
                 'election_id' => 'required|exists:elections,id',
@@ -28,6 +29,7 @@ class CandidateController extends Controller
             foreach ($validated['candidates'] as $candidate) {
                 $candidatesData[] = [
                     'name' => $candidate['name'],
+                    'reg_no' => $candidate['reg_no'] ?? null, // Optional registration number
                     'position' => $candidate['position'],
                     'image' => $candidate['image'] ?? null,
                     'election_id' => $validated['election_id'],
@@ -66,7 +68,7 @@ class CandidateController extends Controller
             // Fetch candidates
             $candidates = Candidate::where('election_id', $election_id)
                 ->orderBy('position')
-                ->get()
+                ->get(['id', 'name', 'reg_no', 'position', 'image']) // Include reg_no
                 ->groupBy('position');
 
             return response()->json([
@@ -89,7 +91,8 @@ class CandidateController extends Controller
     public function getCandidate($id)
     {
         try {
-            $candidate = Candidate::find($id);
+            $candidate = Candidate::select('id', 'name', 'reg_no', 'position', 'image', 'election_id')
+                ->find($id);
 
             if (!$candidate) {
                 return response()->json(['message' => 'Candidate not found.'], Response::HTTP_NOT_FOUND);
@@ -116,6 +119,7 @@ class CandidateController extends Controller
             $validated = $request->validate([
                 'id' => 'required|exists:candidates,id',
                 'name' => 'sometimes|string|max:255',
+                'reg_no' => 'sometimes|string|unique:candidates,reg_no|max:50', // Ensure uniqueness
                 'position' => 'sometimes|string|max:255',
                 'image' => 'nullable|string', // Expect image URL or stored path
             ]);

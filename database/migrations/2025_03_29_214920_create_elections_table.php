@@ -11,7 +11,7 @@ return new class extends Migration {
             $table->id();
             $table->string('name');
             $table->json('positions'); // Store positions as an array
-            $table->enum('status', ['pending', 'open', 'closed', 'reset', 'reopen'])->default('pending'); // ✅ Update allowed values
+            $table->enum('status', ['pending', 'open', 'closed', 'reset', 'reopen'])->default('open');
             $table->timestamp('start_time')->nullable();
             $table->timestamp('end_time')->nullable();
             $table->timestamps();

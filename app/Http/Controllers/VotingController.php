@@ -13,8 +13,7 @@ use Illuminate\Support\Facades\Log;
 class VotingController extends Controller
 {
     /**
-     * 1️⃣ Submit Vote API (POST /api/vote)
-     * Allows a user to vote for multiple candidates in a single election.
+     * Submit Vote API
      */
     public function vote(Request $request)
     {
@@ -22,70 +21,96 @@ class VotingController extends Controller
             // Validate input
             $request->validate([
                 'email' => 'required|email|exists:users,email',
-                'election_id' => 'required|exists:elections,id',
-                'candidate_id' => 'required',
+                'votes' => 'required|array',
+                'votes.*.candidate_id' => 'nullable|exists:candidates,id', // Candidate ID can be null
             ]);
-
+    
             // Get user details
             $user = User::where('email', $request->email)->firstOrFail();
-
-            // Ensure the user is verified
+            
+            // **Check if the user is verified**
             if (!$user->is_verified) {
-                return response()->json([
-                    'message' => 'You must verify your email before voting.',
-                ], Response::HTTP_UNAUTHORIZED);
+                return response()->json(['message' => 'Kindly verify your email first.'], Response::HTTP_FORBIDDEN);
             }
-
-            // Convert single candidate_id to an array for consistency
-            $candidateIds = is_array($request->candidate_id) ? $request->candidate_id : [$request->candidate_id];
-
-            // Check if all candidates belong to the specified election
-            $validCandidates = Candidate::whereIn('id', $candidateIds)
-                ->where('election_id', $request->election_id)
-                ->pluck('id')
-                ->toArray();
-
-            if (count($validCandidates) !== count($candidateIds)) {
-                return response()->json([
-                    'message' => 'Some selected candidates do not belong to this election.',
-                ], Response::HTTP_BAD_REQUEST);
+    
+            $election = Election::where('status', 'open')->first();
+    
+            if (!$election) {
+                return response()->json(['message' => 'No active election at the moment.'], Response::HTTP_NOT_FOUND);
             }
-
-            // Prevent duplicate voting in the same election
-            if ($user->has_voted) {
-                return response()->json([
-                    'message' => 'You have already voted in this election.',
-                ], Response::HTTP_FORBIDDEN);
+    
+            // Prevent normal users from voting more than once
+            if ($user->role !== 'admin' && $user->has_voted) {
+                return response()->json(['message' => 'You have already voted in this election.'], Response::HTTP_FORBIDDEN);
             }
-
-            // Record votes for all selected candidates
-            foreach ($validCandidates as $candidate_id) {
+    
+            $votedPositions = [];
+    
+            foreach ($request->input('votes', []) as $voteObj) {
+                $vote = (array) $voteObj; // Fix stdClass issue
+    
+                $candidateId = $vote['candidate_id'] ?? null;
+                $position = null;
+    
+                // If a candidate is selected, fetch their position
+                if ($candidateId) {
+                    $candidate = Candidate::where('id', $candidateId)
+                        ->where('election_id', $election->id)
+                        ->first();
+    
+                    if (!$candidate) {
+                        return response()->json(['message' => "Candidate ID $candidateId is not valid for this election."], Response::HTTP_BAD_REQUEST);
+                    }
+    
+                    $position = $candidate->position;
+                } else {
+                    return response()->json(['message' => 'Position is required for abstaining.'], Response::HTTP_BAD_REQUEST);
+                }
+    
+                // Ensure only one vote per position
+                if (isset($votedPositions[$position])) {
+                    return response()->json(['message' => "You can only vote for one candidate per position ($position)."], Response::HTTP_BAD_REQUEST);
+                }
+    
+                // Record the vote
                 Vote::create([
                     'voter_id' => $user->id,
-                    'candidate_id' => $candidate_id,
-                    'election_id' => $request->election_id,
+                    'candidate_id' => $candidateId, // Null means abstain
+                    'election_id' => $election->id,
+                    'position' => $position,
                     'is_test_vote' => ($user->role === 'admin'),
                 ]);
+    
+                $votedPositions[$position] = true;
             }
-
-            // Update has_voted status
-            $user->update(['has_voted' => true]);
-
-            return response()->json([
-                'message' => 'Your vote has been recorded successfully.',
-            ], Response::HTTP_OK);
+    
+            // **Final Status Update**  
+            if ($user->role === 'admin') {
+                $user->update([
+                    'is_verified' => true, // Keep admin verified
+                    'has_voted' => false, // Allow admin to vote multiple times
+                ]);
+                return response()->json(['message' => 'Your test vote has been recorded.'], Response::HTTP_OK);
+            } else {
+                $user->update(['has_voted' => true]); // Users can only vote once
+                return response()->json(['message' => 'Your vote has been recorded.'], Response::HTTP_OK);
+            }
+    
         } catch (\Exception $e) {
             Log::error('Voting error', ['error' => $e->getMessage()]);
             return response()->json([
                 'message' => 'An error occurred while submitting your vote.',
+                'error' => $e->getMessage(),
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
+    
+    
+    
 
 
     /**
-     * 2️⃣ Fetch Voting Status API (GET /api/vote/status)
-     * Returns "You have voted" or "You have not voted" based on the user's status.
+     * Fetch Voting Status API
      */
     public function getVoteStatus(Request $request)
     {

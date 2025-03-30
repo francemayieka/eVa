@@ -25,7 +25,7 @@ Route::delete('/user/delete', [AuthController::class, 'deleteAccount']);
 Route::post('/elections', [ElectionController::class, 'createElection']);
 Route::get('/elections/{id}', [ElectionController::class, 'getElectionDetails']);
 Route::get('/elections', [ElectionController::class, 'getElections']);
-Route::patch('/elections', [ElectionController::class, 'updateElection']);
+Route::patch('/elections/{id}', [ElectionController::class, 'updateElection']);
 Route::delete('/elections/{id}', [ElectionController::class, 'deleteElection']);
 
 // Candidate Management

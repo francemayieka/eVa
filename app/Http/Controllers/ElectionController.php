@@ -4,18 +4,18 @@ namespace App\Http\Controllers;
 
 use App\Models\Election;
 use App\Models\Candidate;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
-use Carbon\Carbon;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Storage;
 
 class ElectionController extends Controller
 {
     /**
-     * Create a new election with positions.
+     * Create a new election (auto-closing previous elections).
      */
     public function createElection(Request $request)
     {
@@ -37,11 +37,18 @@ class ElectionController extends Controller
         }
 
         try {
+            // Close ALL previous elections (whether open or pending)
+            Election::whereIn('status', ['open', 'pending'])->update(['status' => 'closed']);
+
+            // Reset voting status for all users
+            User::query()->update(['has_voted' => false, 'is_verified' => false]);
+
+            // Create the new election with status 'open'
             $election = Election::create([
                 'name' => $request->name,
                 'start_time' => $request->start_time,
                 'end_time' => $request->end_time,
-                'status' => 'pending',
+                'status' => 'open', // Default to open
                 'positions' => $request->positions,
             ]);
 
@@ -57,6 +64,7 @@ class ElectionController extends Controller
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
+
 
     /**
      * Fetch a specific election.
