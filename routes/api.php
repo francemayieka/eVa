@@ -29,8 +29,11 @@ Route::patch('/elections', [ElectionController::class, 'updateElection']);
 Route::delete('/elections/{id}', [ElectionController::class, 'deleteElection']);
 
 // Candidate Management
-Route::post('/candidates', [CandidateController::class, 'addCandidate']);
-Route::get('/elections/{id}/candidates', [CandidateController::class, 'getCandidates']);
+Route::post('/candidates', [CandidateController::class, 'addCandidate']); // Add 1 or multiple candidates
+Route::get('/elections/{id}/candidates', [CandidateController::class, 'getCandidates']); // Get all candidates for an election
+Route::get('/candidates/{id}', [CandidateController::class, 'getCandidate']); // Fetch a single candidate
+Route::patch('/candidates', [CandidateController::class, 'updateCandidate']); // Update candidate details
+Route::delete('/candidates/{id}', [CandidateController::class, 'deleteCandidate']); // Delete candidate
 
 // Verification Code API
 Route::post('/request-verification-code', [VerificationController::class, 'requestVerificationCode']);
@@ -45,5 +48,3 @@ Route::get('/elections/{id}/results', [ElectionController::class, 'getResults'])
 
 // Download election results as PDF
 Route::get('/elections/{id}/results/pdf', [ElectionController::class, 'downloadResultsPdf']);
-
-Route::get('/debug-storage', [ElectionController::class, 'debugStorage']);

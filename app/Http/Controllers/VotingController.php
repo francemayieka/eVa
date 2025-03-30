@@ -14,6 +14,7 @@ class VotingController extends Controller
 {
     /**
      * 1️⃣ Submit Vote API (POST /api/vote)
+     * Allows a user to vote for multiple candidates in a single election.
      */
     public function vote(Request $request)
     {
@@ -22,7 +23,7 @@ class VotingController extends Controller
             $request->validate([
                 'email' => 'required|email|exists:users,email',
                 'election_id' => 'required|exists:elections,id',
-                'candidate_id' => 'required|exists:candidates,id',
+                'candidate_id' => 'required',
             ]);
 
             // Get user details
@@ -35,34 +36,43 @@ class VotingController extends Controller
                 ], Response::HTTP_UNAUTHORIZED);
             }
 
-            // Check if the candidate belongs to the specified election
-            if (!Candidate::where(['id' => $request->candidate_id, 'election_id' => $request->election_id])->exists()) {
+            // Convert single candidate_id to an array for consistency
+            $candidateIds = is_array($request->candidate_id) ? $request->candidate_id : [$request->candidate_id];
+
+            // Check if all candidates belong to the specified election
+            $validCandidates = Candidate::whereIn('id', $candidateIds)
+                ->where('election_id', $request->election_id)
+                ->pluck('id')
+                ->toArray();
+
+            if (count($validCandidates) !== count($candidateIds)) {
                 return response()->json([
-                    'message' => 'Invalid candidate selection for this election.',
+                    'message' => 'Some selected candidates do not belong to this election.',
                 ], Response::HTTP_BAD_REQUEST);
             }
 
-            // Allow admins to vote multiple times for testing
-            if ($user->role !== 'admin') {
-                // Check if the user has already voted in this election
-                if (Vote::where(['voter_id' => $user->id, 'election_id' => $request->election_id])->exists()) {
-                    return response()->json([
-                        'message' => 'You have already voted in this election.',
-                    ], Response::HTTP_FORBIDDEN);
-                }
+            // Prevent duplicate voting in the same election
+            if ($user->has_voted) {
+                return response()->json([
+                    'message' => 'You have already voted in this election.',
+                ], Response::HTTP_FORBIDDEN);
             }
 
-            // Record the vote
-            Vote::create([
-                'voter_id' => $user->id,
-                'candidate_id' => $request->candidate_id,
-                'election_id' => $request->election_id,
-                'is_test_vote' => ($user->role === 'admin'), // Mark admin votes as test votes
-            ]);
+            // Record votes for all selected candidates
+            foreach ($validCandidates as $candidate_id) {
+                Vote::create([
+                    'voter_id' => $user->id,
+                    'candidate_id' => $candidate_id,
+                    'election_id' => $request->election_id,
+                    'is_test_vote' => ($user->role === 'admin'),
+                ]);
+            }
+
+            // Update has_voted status
+            $user->update(['has_voted' => true]);
 
             return response()->json([
-                'message' => 'Vote submitted successfully!',
-                'is_test_vote' => ($user->role === 'admin'), // Indicate if it's a test vote
+                'message' => 'Your vote has been recorded successfully.',
             ], Response::HTTP_OK);
         } catch (\Exception $e) {
             Log::error('Voting error', ['error' => $e->getMessage()]);
@@ -72,8 +82,10 @@ class VotingController extends Controller
         }
     }
 
+
     /**
      * 2️⃣ Fetch Voting Status API (GET /api/vote/status)
+     * Returns "You have voted" or "You have not voted" based on the user's status.
      */
     public function getVoteStatus(Request $request)
     {
@@ -86,21 +98,8 @@ class VotingController extends Controller
             // Get user details
             $user = User::where('email', $request->email)->firstOrFail();
 
-            // Retrieve all votes cast by the user
-            $votes = Vote::where('voter_id', $user->id)
-                        ->with(['candidate', 'election'])
-                        ->get();
-
-            if ($votes->isEmpty()) {
-                return response()->json([
-                    'message' => 'You have not voted in any election yet.',
-                    'votes' => [],
-                ], Response::HTTP_OK);
-            }
-
             return response()->json([
-                'message' => 'Voting status retrieved successfully.',
-                'votes' => $votes,
+                'message' => $user->has_voted ? 'You have voted.' : 'You have not voted.',
             ], Response::HTTP_OK);
         } catch (\Exception $e) {
             Log::error('Fetching voting status error', ['error' => $e->getMessage()]);

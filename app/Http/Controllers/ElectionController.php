@@ -3,12 +3,16 @@
 namespace App\Http\Controllers;
 
 use App\Models\Election;
+use App\Models\Candidate;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
+use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Support\Facades\Storage;
 
-class ElectionController
+class ElectionController extends Controller
 {
     /**
      * Create a new election with positions.
@@ -17,21 +21,28 @@ class ElectionController
     {
         Log::info('Creating Election', ['request' => $request->all()]);
 
-        $validated = $request->validate([
+        $validator = Validator::make($request->all(), [
             'name' => 'required|string|unique:elections,name',
-            'start_time' => 'required|date',
-            'end_time' => 'required|date|after_or_equal:start_time',
+            'start_time' => 'required|date|after:now',
+            'end_time' => 'required|date|after:start_time',
             'positions' => 'required|array|min:1',
             'positions.*' => 'required|string|distinct',
         ]);
 
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation error',
+                'errors' => $validator->errors(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
         try {
             $election = Election::create([
-                'name' => $validated['name'],
-                'start_time' => $validated['start_time'],
-                'end_time' => $validated['end_time'],
-                'status' => 'pending', // ✅ Default when created
-                'positions' => $validated['positions'], 
+                'name' => $request->name,
+                'start_time' => $request->start_time,
+                'end_time' => $request->end_time,
+                'status' => 'pending',
+                'positions' => $request->positions,
             ]);
 
             return response()->json([
@@ -39,10 +50,10 @@ class ElectionController
                 'election' => $election,
             ], Response::HTTP_CREATED);
         } catch (\Exception $e) {
-            Log::error('Error creating election', ['error' => $e->getMessage()]);
+            Log::error('Election creation failed', ['error' => $e->getMessage()]);
             return response()->json([
                 'message' => 'Failed to create election.',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
@@ -60,10 +71,10 @@ class ElectionController
 
             return response()->json($election, Response::HTTP_OK);
         } catch (\Exception $e) {
-            Log::error('Error fetching election details', ['error' => $e->getMessage()]);
+            Log::error('Fetching election details failed', ['error' => $e->getMessage()]);
             return response()->json([
                 'message' => 'Failed to retrieve election details.',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
@@ -81,25 +92,30 @@ class ElectionController
                 'elections' => $elections
             ], Response::HTTP_OK);
         } catch (\Exception $e) {
-            Log::error('Error fetching elections', ['error' => $e->getMessage()]);
+            Log::error('Fetching elections failed', ['error' => $e->getMessage()]);
             return response()->json([
                 'message' => 'Failed to retrieve elections.',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
 
-        /**
-     * Update an election (PATCH).
+    /**
+     * Update an election.
      */
-    public function updateElection(Request $request)
+    public function updateElection(Request $request, $id)
     {
         try {
-            // Validate the request
-            $validated = $request->validate([
-                'id' => 'required|exists:elections,id',
-                'name' => 'sometimes|string|unique:elections,name,' . $request->id,
-                'start_time' => 'sometimes|date',
+            $election = Election::find($id);
+            if (!$election) {
+                return response()->json([
+                    'message' => 'Election not found.',
+                ], Response::HTTP_NOT_FOUND);
+            }
+
+            $validator = Validator::make($request->all(), [
+                'name' => 'sometimes|string|unique:elections,name,' . $id,
+                'start_time' => 'sometimes|date|after:now',
                 'end_time' => 'sometimes|date|after_or_equal:start_time',
                 'positions' => 'sometimes|array|min:1',
                 'positions.*' => 'sometimes|string|distinct',
@@ -107,37 +123,28 @@ class ElectionController
                 'description' => 'sometimes|string|max:500',
             ]);
 
-            // Find the election
-            $election = Election::find($validated['id']);
-            if (!$election) {
+            if ($validator->fails()) {
                 return response()->json([
-                    'message' => 'Election not found.',
-                    'error' => 'No election exists with the given ID.',
-                ], Response::HTTP_NOT_FOUND);
+                    'message' => 'Validation error',
+                    'errors' => $validator->errors(),
+                ], Response::HTTP_UNPROCESSABLE_ENTITY);
             }
 
-            // Update the election
-            $election->update($validated);
+            $election->update($request->all());
 
             return response()->json([
                 'message' => 'Election updated successfully.',
                 'election' => $election,
             ], Response::HTTP_OK);
 
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            return response()->json([
-                'message' => 'Validation failed.',
-                'errors' => $e->errors(),
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
         } catch (\Exception $e) {
-            Log::error('Error updating election', ['error' => $e->getMessage()]);
+            Log::error('Updating election failed', ['error' => $e->getMessage()]);
             return response()->json([
                 'message' => 'Failed to update election.',
                 'error' => $e->getMessage(),
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
-
 
     /**
      * Delete an election.
@@ -153,10 +160,84 @@ class ElectionController
             $election->delete();
             return response()->json(['message' => 'Election deleted successfully.'], Response::HTTP_OK);
         } catch (\Exception $e) {
-            Log::error('Error deleting election', ['error' => $e->getMessage()]);
+            Log::error('Deleting election failed', ['error' => $e->getMessage()]);
             return response()->json([
                 'message' => 'Failed to delete election.',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    /**
+     * Fetch election results grouped by position.
+     */
+    public function getResults($id)
+    {
+        try {
+            $election = Election::find($id);
+            if (!$election) {
+                return response()->json([
+                    'message' => 'Election not found.',
+                    'results' => []
+                ], Response::HTTP_NOT_FOUND);
+            }
+
+            $results = Candidate::where('election_id', $id)
+                ->withCount('votes')
+                ->orderBy('position')
+                ->orderByDesc('votes_count')
+                ->get(['id', 'name', 'position', 'votes_count'])
+                ->groupBy('position');
+
+            return response()->json([
+                'message' => 'Election results retrieved successfully.',
+                'election' => $election->name,
+                'results' => $results
+            ], Response::HTTP_OK);
+        } catch (\Exception $e) {
+            Log::error('Fetching election results failed', ['error' => $e->getMessage()]);
+            return response()->json([
+                'message' => 'Failed to retrieve election results.',
+                'error' => $e->getMessage(),
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    /**
+     * Generate and store a PDF of election results.
+     */
+    public function downloadResultsPdf($id)
+    {
+        try {
+            $election = Election::find($id);
+            if (!$election) {
+                return response()->json([
+                    'message' => 'Election not found.'
+                ], Response::HTTP_NOT_FOUND);
+            }
+
+            $results = Candidate::where('election_id', $id)
+                ->select('position', 'name')
+                ->withCount('votes')
+                ->orderBy('position')
+                ->orderByDesc('votes_count')
+                ->get()
+                ->groupBy('position');
+
+            $pdf = Pdf::loadView('pdf.results', compact('election', 'results'));
+
+            $filePath = 'results/election_' . $election->id . '_results.pdf';
+            Storage::put($filePath, $pdf->output());
+
+            return response()->json([
+                'message' => 'PDF generated successfully.',
+                'path' => storage_path('app/' . $filePath)
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Generating results PDF failed', ['error' => $e->getMessage()]);
+            return response()->json([
+                'message' => 'Failed to generate PDF.',
+                'error' => $e->getMessage(),
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
