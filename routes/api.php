@@ -12,15 +12,21 @@ Route::get('/test-api', function () {
     return response()->json(['message' => 'API is working!']);
 });
 
-// Authentication
+// Authentication (No Bearer Token)
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
+Route::post('/logout', [AuthController::class, 'logout']);
+
+// User Management
+Route::patch('/user/update', [AuthController::class, 'updateProfile']);
+Route::delete('/user/delete', [AuthController::class, 'deleteAccount']);
 
 // Election Management
 Route::post('/elections', [ElectionController::class, 'createElection']);
-Route::patch('/elections/{id}/status', [ElectionController::class, 'updateStatus']);
 Route::get('/elections/{id}', [ElectionController::class, 'getElectionDetails']);
 Route::get('/elections', [ElectionController::class, 'getElections']);
+Route::patch('/elections', [ElectionController::class, 'updateElection']);
+Route::delete('/elections/{id}', [ElectionController::class, 'deleteElection']);
 
 // Candidate Management
 Route::post('/candidates', [CandidateController::class, 'addCandidate']);
@@ -39,3 +45,5 @@ Route::get('/elections/{id}/results', [ElectionController::class, 'getResults'])
 
 // Download election results as PDF
 Route::get('/elections/{id}/results/pdf', [ElectionController::class, 'downloadResultsPdf']);
+
+Route::get('/debug-storage', [ElectionController::class, 'debugStorage']);
