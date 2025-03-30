@@ -5,6 +5,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ElectionController;
 use App\Http\Controllers\CandidateController;
 use App\Http\Controllers\VerificationController;
+use App\Http\Controllers\VotingController;
 
 // Test API route
 Route::get('/test-api', function () {
@@ -29,4 +30,12 @@ Route::get('/elections/{id}/candidates', [CandidateController::class, 'getCandid
 Route::post('/request-verification-code', [VerificationController::class, 'requestVerificationCode']);
 Route::post('/verify-code', [VerificationController::class, 'verifyCode']);
 
+// Voting API
+Route::post('/vote', [VotingController::class, 'vote']);
+Route::get('/vote/status', [VotingController::class, 'getVoteStatus']);
 
+// Fetch election results
+Route::get('/elections/{id}/results', [ElectionController::class, 'getResults']);
+
+// Download election results as PDF
+Route::get('/elections/{id}/results/pdf', [ElectionController::class, 'downloadResultsPdf']);

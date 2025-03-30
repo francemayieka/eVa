@@ -78,4 +78,28 @@ class ElectionController
             'election' => $election,
         ], Response::HTTP_OK);
     }
+
+    public function getResults($id)
+    {
+        // Validate election existence
+        $election = Election::find($id);
+        if (!$election) {
+            return response()->json([
+                'message' => 'Election not found.'
+            ], Response::HTTP_NOT_FOUND);
+        }
+
+        // Fetch candidates and their vote counts
+        $results = Candidate::where('election_id', $id)
+            ->withCount('votes')
+            ->orderByDesc('votes_count')
+            ->get(['id', 'name', 'position', 'votes_count']);
+
+        return response()->json([
+            'message' => 'Election results retrieved successfully.',
+            'election' => $election->name,
+            'results' => $results
+        ], Response::HTTP_OK);
+    }
+
 }

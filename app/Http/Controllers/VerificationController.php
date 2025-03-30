@@ -16,22 +16,25 @@ class VerificationController extends Controller
      */
     public function requestVerificationCode(Request $request)
     {
-        // Force Laravel to return JSON in case of errors
-        if ($request->expectsJson()) {
-            return response()->json(['message' => 'Invalid request'], Response::HTTP_BAD_REQUEST);
-        }
-
         // Validate email input
         $request->validate([
-            'email' => 'required|email',
+            'email' => 'required|email|exists:users,email',
         ]);
 
-        // Check if user exists
+        // Get user details
         $user = User::where('email', $request->email)->first();
+
         if (!$user) {
             return response()->json([
                 'message' => 'Email not found. Please register first.'
             ], Response::HTTP_NOT_FOUND);
+        }
+
+        // Check if the user is already verified
+        if ($user->is_verified) {
+            return response()->json([
+                'message' => 'You are already verified. You may proceed to vote.'
+            ], Response::HTTP_OK);
         }
 
         // Generate a unique 5-digit verification code
@@ -53,16 +56,26 @@ class VerificationController extends Controller
      */
     public function verifyCode(Request $request)
     {
-        // Force Laravel to return JSON in case of errors
-        if ($request->expectsJson()) {
-            return response()->json(['message' => 'Invalid request'], Response::HTTP_BAD_REQUEST);
-        }
-
         // Validate input
         $request->validate([
-            'email' => 'required|email',
+            'email' => 'required|email|exists:users,email',
             'code' => 'required|digits:5',
         ]);
+
+        // Get user details
+        $user = User::where('email', $request->email)->first();
+        if (!$user) {
+            return response()->json([
+                'message' => 'User not found.'
+            ], Response::HTTP_NOT_FOUND);
+        }
+
+        // Check if the user is already verified
+        if ($user->is_verified) {
+            return response()->json([
+                'message' => 'You are already verified. You may proceed to vote.'
+            ], Response::HTTP_OK);
+        }
 
         // Retrieve the stored code from cache
         $storedCode = Cache::get('verification_code_' . $request->email);
@@ -78,6 +91,9 @@ class VerificationController extends Controller
                 'message' => 'Invalid verification code.'
             ], Response::HTTP_UNAUTHORIZED);
         }
+
+        // Mark user as verified in the database
+        $user->update(['is_verified' => true]);
 
         // Remove the code after successful verification
         Cache::forget('verification_code_' . $request->email);
