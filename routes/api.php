@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ElectionController;
 use App\Http\Controllers\CandidateController;
+use App\Http\Controllers\VerificationController;
 
 // Test API route
 Route::get('/test-api', function () {
@@ -23,5 +24,9 @@ Route::get('/elections', [ElectionController::class, 'getElections']);
 // Candidate Management
 Route::post('/candidates', [CandidateController::class, 'addCandidate']);
 Route::get('/elections/{id}/candidates', [CandidateController::class, 'getCandidates']);
+
+// Verification Code API
+Route::post('/request-verification-code', [VerificationController::class, 'requestVerificationCode']);
+Route::post('/verify-code', [VerificationController::class, 'verifyCode']);
 
 
